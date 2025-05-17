@@ -1,8 +1,11 @@
 package me.isaiah.multiworld;
 
-import net.minecraft.world.gen.chunk.ChunkGenerator;
-import net.minecraft.world.Difficulty;
-import net.minecraft.world.World;
+import me.isaiah.multiworld.command.Util;
+
+import net.minecraft.registry.Registry;
+import net.minecraft.registry.RegistryKey;
+import net.minecraft.registry.RegistryKeys;
+import net.minecraft.registry.entry.RegistryEntry;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.server.world.ServerWorld;
@@ -10,12 +13,24 @@ import net.minecraft.text.Text;
 import net.minecraft.util.Formatting;
 import net.minecraft.util.Identifier;
 import net.minecraft.util.math.BlockPos;
+import net.minecraft.world.Difficulty;
+import net.minecraft.world.World;
+import net.minecraft.world.dimension.DimensionOptions;
+import net.minecraft.world.dimension.DimensionType;
+import net.minecraft.world.gen.WorldPreset;
+import net.minecraft.world.gen.chunk.ChunkGenerator;
 
 public interface ICreator {
 
 	/**
 	 */
 	public ServerWorld create_world(String id, Identifier dim, ChunkGenerator gen, Difficulty dif, long seed);
+
+	public void delete_world(String id);
+
+	public default boolean unload_world(String id) {
+		return false; // unsupported
+	}
 
 	/**
 	 */
@@ -42,27 +57,63 @@ public interface ICreator {
 	void set_difficulty(String id, Difficulty dif);
 
     /**
-     * Return a {@link ChunkGenerator} for the given vanilla environment,
-     * or NULL if the passed argument is not NORMAL / NETHER / END.
+     * Get the DimensionOptions for a given world preset and dimension
+     * 
+     * @param mc The Minecraft server
+     * @param presetKey The world preset key
+     * @param dimensionKey The dimension key within the preset
+     * @return The DimensionOptions or null if not found
      */
-    default ChunkGenerator get_chunk_gen(MinecraftServer mc, String env) {
-    	ChunkGenerator gen = null;
-    	if (env.contains("NORMAL")) {
-			gen = mc.getWorld(World.OVERWORLD).getChunkManager().getChunkGenerator(); // .withSeed(seed);
-		}
+    default DimensionOptions getDimensionOptions(MinecraftServer mc, String presetKey, String dimensionKey) {
+        try {
+            // Look up the WorldPreset from the registry
+            Identifier presetId = Util.id(presetKey);
+            RegistryKey<WorldPreset> presetRegistryKey = RegistryKey.of(RegistryKeys.WORLD_PRESET, presetId);
+            Registry<WorldPreset> presetRegistry = mc.getRegistryManager().get(RegistryKeys.WORLD_PRESET);
+            
+            WorldPreset preset = presetRegistry.get(presetRegistryKey);
+            if (preset == null) {
+                return null;
+            }
+            
+            // Create dimensions registry holder to access dimension options
+            var dimensionsHolder = preset.createDimensionsRegistryHolder();
+            
+            // Get the dimension options from the preset
+            Identifier dimId = Util.id(dimensionKey);
+            RegistryKey<DimensionOptions> dimKey = RegistryKey.of(RegistryKeys.DIMENSION, dimId);
+            
+            return dimensionsHolder.getOrEmpty(dimKey).orElse(null);
+        } catch (Exception e) {
+            e.printStackTrace();
+            return null;
+        }
+    }
 
-		if (env.contains("NETHER")) {
-			gen = mc.getWorld(World.NETHER).getChunkManager().getChunkGenerator();
-		}
-		
-		if (env.contains("END")) {
-			gen = mc.getWorld(World.END).getChunkManager().getChunkGenerator(); // .withSeed(seed);
-		}
+    /**
+     * Return a {@link ChunkGenerator} for the given world preset and dimension.
+     * null if not found
+     */
+    default ChunkGenerator get_chunk_gen(MinecraftServer mc, String presetKey, String dimensionKey) {
+        DimensionOptions dimOptions = getDimensionOptions(mc, presetKey, dimensionKey);
+        return dimOptions != null ? dimOptions.chunkGenerator() : null;
+    }
 
-		return gen;
-    } 
+    /**
+     * Return a dimension type key for the given world preset and dimension.
+     * null if not found
+     */
+    default Identifier get_dim_type(String presetKey, String dimensionKey) {
+        DimensionOptions dimOptions = getDimensionOptions(MultiworldMod.mc, presetKey, dimensionKey);
+        if (dimOptions != null) {
+            RegistryEntry<DimensionType> dimensionTypeEntry = dimOptions.dimensionTypeEntry();
+            return dimensionTypeEntry.getKey().orElseThrow().getValue();
+        }
 
-	// TODO: move to icommonlib:
+        return null;
+    }
+
+    // TODO: move to icommonlib:
 	public BlockPos get_spawn(ServerWorld world);
 	public boolean is_the_end(ServerWorld world);
 	

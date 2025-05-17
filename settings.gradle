@@ -13,6 +13,8 @@ pluginManagement {
 rootProject.name = 'Multiworld'
 mod_version = '1.8.1'
 
+includeBuild("../fantasy")
+
 include 'Multiworld-Common'
 
 // Fabric

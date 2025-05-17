@@ -15,12 +15,18 @@ import static net.minecraft.server.command.CommandManager.literal;
 import com.mojang.brigadier.Command;
 import com.mojang.brigadier.exceptions.CommandSyntaxException;
 
+import me.isaiah.multiworld.command.CloneCommand;
 import me.isaiah.multiworld.command.CreateCommand;
+import me.isaiah.multiworld.command.DeleteCommand;
 import me.isaiah.multiworld.command.DifficultyCommand;
 import me.isaiah.multiworld.command.GameruleCommand;
+import me.isaiah.multiworld.command.LoadCommand;
 import me.isaiah.multiworld.command.SetspawnCommand;
 import me.isaiah.multiworld.command.SpawnCommand;
 import me.isaiah.multiworld.command.TpCommand;
+import me.isaiah.multiworld.command.UnloadCommand;
+import me.isaiah.multiworld.command.Util;
+import me.isaiah.multiworld.config.WorldConfig;
 import me.isaiah.multiworld.perm.Perm;
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.server.MinecraftServer;
@@ -80,23 +86,7 @@ public class MultiworldMod {
     public static void on_server_started(MinecraftServer mc) {
         MultiworldMod.mc = mc;
 		
-		File cfg_folder = new File("config");
-		if (cfg_folder.exists()) {
-			File folder = new File(cfg_folder, "multiworld");
-			File worlds = new File(folder, "worlds");
-			if (worlds.exists()) {
-				for (File f : worlds.listFiles()) {
-					if (f.getName().equals("minecraft")) {
-						continue;
-					}
-					for (File fi : f.listFiles()) {
-						String id = f.getName() + ":" + fi.getName().replace(".yml", "");
-						System.out.println("Found saved world " + id);
-						CreateCommand.reinit_world_from_config(mc, id);
-					}
-				}
-			}
-		}
+		WorldConfig.loadAllWorlds(mc);
     }
 
     public static ServerPlayerEntity get_player(ServerCommandSource s) throws CommandSyntaxException {
@@ -136,20 +126,21 @@ public class MultiworldMod {
     }
    
     public static int broadcast(ServerCommandSource source, Formatting formatting, String message) throws CommandSyntaxException {
-        final ServerPlayerEntity plr = get_player(source); // source.getPlayerOrThrow();
-
         if (null == message) {
-            plr.sendMessage(text("Multiworld Mod for Minecraft " + mc.getVersion(), Formatting.AQUA), false);
+            source.sendMessage(text("Multiworld Mod for Minecraft " + mc.getVersion(), Formatting.AQUA));
             
-            World world = plr.getWorld();
-            Identifier id = world.getRegistryKey().getValue();
-            
-            message(plr, "Currently in: " + id.toString());
+            if (source.isExecutedByPlayer()) {
+                ServerPlayerEntity plr = source.getPlayer();
+                World world = plr.getWorld();
+                Identifier id = world.getRegistryKey().getValue();
+                
+                source.sendMessage(Text.literal("Currently in: " + id.toString()));
+            }
             
             return 1;
         }
 
-        boolean ALL = Perm.has(plr, "multiworld.admin");
+        boolean ALL = Perm.has(source, "multiworld.admin");
         String[] args = message.split(" ");
         
         /*if (args[0].equalsIgnoreCase("portaltest")) {
@@ -179,93 +170,139 @@ public class MultiworldMod {
         
         // Help Command
         if (args[0].equalsIgnoreCase("help")) {
-            String[] lines = {
-            		"&4Multiworld Mod Commands:&r",
-            		"&a/mw spawn&r - Teleport to current world spawn",
-            		"&a/mw setspawn&r - Sets the current world spawn",
-            		"&a/mw tp <id>&r - Teleport to a world",
-            		"&a/mw list&r - List all worlds",
-            		"&a/mw gamerule <rule> <value>&r - Change a worlds Gamerules",
-            		"&a/mw create <id> <env>&r - create a new world",
-            		"&a/mw difficulty <value> [world id] - Sets the difficulty of a world"
-            };
-            
-            for (String s : lines) {
-            	message(plr, s);
-            }
-            
+            source.sendMessage(Text.literal("§4Multiworld Mod Commands:§r"));
+            source.sendMessage(Text.literal("§a/mw spawn§r - Teleport to current world spawn"));
+            source.sendMessage(Text.literal("§a/mw setspawn§r - Sets the current world spawn"));
+            source.sendMessage(Text.literal("§a/mw tp <id>§r - Teleport to a world"));
+            source.sendMessage(Text.literal("§a/mw list§r - List all worlds"));
+            source.sendMessage(Text.literal("§a/mw gamerule <rule> <value>§r - Change a worlds Gamerules"));
+            source.sendMessage(Text.literal("§a/mw create <id> <world_preset> <world_preset_dimension>§r - create a new world"));
+            source.sendMessage(Text.literal("§a/mw difficulty <value> [world id]§r - Sets the difficulty of a world"));
+            source.sendMessage(Text.literal("§a/mw load <id>§r - Load a world"));
+            source.sendMessage(Text.literal("§a/mw unload <id>§r - Unload a world"));
+            source.sendMessage(Text.literal("§a/mw clone <existing id> <new id>§r - Clones a world"));
+            source.sendMessage(Text.literal("§a/mw delete <id>§r - Deletes a world and all its files permanently"));
         }
         
         // Debug
         if (args[0].equalsIgnoreCase("debugtick")) {
-        	ServerWorld w = (ServerWorld) plr.getWorld();
-        	Identifier id = w.getRegistryKey().getValue();
-        	message(plr, "World ID: " + id.toString());
-        	message(plr, "Players : " + w.getPlayers().size());
-        	w.tick(() -> true);
+            ServerWorld w = (ServerWorld) source.getWorld();
+            Identifier id = w.getRegistryKey().getValue();
+            source.sendMessage(Text.literal("World ID: " + id.toString()));
+            source.sendMessage(Text.literal("Players : " + w.getPlayers().size()));
+            w.tick(() -> true);
+            return 1;
         }
 
         // SetSpawn Command
-        if (args[0].equalsIgnoreCase("setspawn") && (ALL || Perm.has(plr, "multiworld.setspawn") )) {
-            return SetspawnCommand.run(mc, plr, args);
+        if (args[0].equalsIgnoreCase("setspawn") && (ALL || Perm.has(source, "multiworld.setspawn"))) {
+            return SetspawnCommand.run(mc, source, args);
         }
 
         // Spawn Command
-        if (args[0].equalsIgnoreCase("spawn") && (ALL || Perm.has(plr, "multiworld.spawn")) ) {
-            return SpawnCommand.run(mc, plr, args);
+        if (args[0].equalsIgnoreCase("spawn") && (ALL || Perm.has(source, "multiworld.spawn"))) {
+            return SpawnCommand.run(mc, source, args);
         }
         
         // Gamerule Command
-        if (args[0].equalsIgnoreCase("gamerule") && (ALL || Perm.has(plr, "multiworld.gamerule"))) {
-        	return GameruleCommand.run(mc, plr, args);
+        if (args[0].equalsIgnoreCase("gamerule") && (ALL || Perm.has(source, "multiworld.gamerule"))) {
+            return GameruleCommand.run(mc, source, args);
         }
         
         // Difficulty Command
-        if (args[0].equalsIgnoreCase("difficulty") && (ALL || Perm.has(plr, "multiworld.difficulty"))) {
-        	return DifficultyCommand.run(mc, plr, args);
+        if (args[0].equalsIgnoreCase("difficulty") && (ALL || Perm.has(source, "multiworld.difficulty"))) {
+            return DifficultyCommand.run(mc, source, args);
         }
 
         // TP Command
         if (args[0].equalsIgnoreCase("tp") ) {
-            if (!(ALL || Perm.has(plr, "multiworld.tp"))) {
-                plr.sendMessage(Text.of("No permission! Missing permission: multiworld.tp"), false);
+            if (!(ALL || Perm.has(source, "multiworld.tp"))) {
+                source.sendError(Text.literal("No permission! Missing permission: multiworld.tp"));
                 return 1;
             }
             if (args.length == 1) {
-                plr.sendMessage(text_plain("Usage: /" + CMD + " tp <world>"), false);
+                source.sendError(Text.literal("Usage: /" + CMD + " tp <world>"));
                 return 0;
             }
-            return TpCommand.run(mc, plr, args);
+            return TpCommand.run(mc, source, args);
         }
 
         // List Command
         if (args[0].equalsIgnoreCase("list") ) {
-            if (!(ALL || Perm.has(plr, "multiworld.cmd"))) {
-                plr.sendMessage(Text.of("No permission! Missing permission: multiworld.cmd"), false);
+            if (!(ALL || Perm.has(source, "multiworld.cmd"))) {
+                source.sendError(Text.literal("No permission! Missing permission: multiworld.cmd"));
                 return 1;
             }
-            plr.sendMessage(text("All Worlds:", Formatting.AQUA), false);
+            source.sendMessage(text("All Worlds:", Formatting.AQUA));
+            
+            // List loaded worlds
             mc.getWorlds().forEach(world -> {
                 String name = world.getRegistryKey().getValue().toString();
                 if (name.startsWith("multiworld:")) name = name.replace("multiworld:", "");
 
-                plr.sendMessage(text_plain("- " + name), false);
+                source.sendMessage(text_plain("- " + name));
             });
+            
+            // List unloaded worlds
+            String[] allWorldConfigs = WorldConfig.findAllWorldConfigs(mc);
+            for (String worldId : allWorldConfigs) {
+                if (!Util.isWorldLoaded(mc, worldId)) {
+                    String displayName = worldId;
+                    if (displayName.startsWith("multiworld:")) displayName = displayName.replace("multiworld:", "");
+                    source.sendMessage(text_plain("- " + displayName + " (unloaded)"));
+                }
+            }
         }
 
         // Version Command
-        if (args[0].equalsIgnoreCase("version") && (ALL || Perm.has(plr, "multiworld.cmd")) ) {
-            message(plr, "Multiworld Mod version " + VERSION);
+        if (args[0].equalsIgnoreCase("version") && (ALL || Perm.has(source, "multiworld.cmd"))) {
+            source.sendMessage(Text.literal("Multiworld Mod version " + VERSION));
             return 1;
         }
 
         // Create Command
         if (args[0].equalsIgnoreCase("create") ) {
-            if (!(ALL || Perm.has(plr, "multiworld.create"))) {
-                message(plr, "No permission! Missing permission: multiworld.create");
+            if (!(ALL || Perm.has(source, "multiworld.create"))) {
+                source.sendError(Text.literal("No permission! Missing permission: multiworld.create"));
                 return 1;
             }
-            return CreateCommand.run(mc, plr, args);
+            return CreateCommand.run(mc, source, args);
+        }
+
+        // Delete Command
+        if (args[0].equalsIgnoreCase("delete") ) {
+            if (!(ALL || Perm.has(source, "multiworld.delete"))) {
+                source.sendError(Text.literal("No permission! Missing permission: multiworld.delete"));
+                return 1;
+            }
+            return DeleteCommand.run(mc, source, args);
+        }
+
+        // Clone Command
+        if (args[0].equalsIgnoreCase("clone") ) {
+            if (!(ALL || Perm.has(source, "multiworld.clone"))) {
+                source.sendError(Text.literal("No permission! Missing permission: multiworld.clone"));
+                return 1;
+            }
+            return CloneCommand.run(mc, source, args);
+        }
+        
+        // Load Command
+        if (args[0].equalsIgnoreCase("load") ) {
+            if (!(ALL || Perm.has(source, "multiworld.load"))) {
+                source.sendError(Text.literal("No permission! Missing permission: multiworld.load"));
+                return 1;
+            }
+            return LoadCommand.run(mc, source, args);
+        }
+        
+        // Unload Command
+        if (args[0].equalsIgnoreCase("unload") ) {
+            if (!(ALL || Perm.has(source, "multiworld.unload"))) {
+                source.sendError(Text.literal("No permission! Missing permission: multiworld.unload"));
+                return 1;
+            }
+            return UnloadCommand.run(mc, source, args);
         }
 
         return Command.SINGLE_SUCCESS; // Success
@@ -278,7 +315,7 @@ public class MultiworldMod {
 	
 	public static void message(PlayerEntity player, String message) {
 		try {
-			player.sendMessage(Text.of(translate_alternate_color_codes('&', message)), false);
+			player.sendMessage(Text.literal(translate_alternate_color_codes('&', message)), false);
 		} catch (Exception e) {
 			e.printStackTrace();
 		}
@@ -297,7 +334,7 @@ public class MultiworldMod {
     }
 
 	public static Text text_plain(String txt) {
-		return Text.of(txt);
+		return Text.literal(txt);
 	}
 
 }

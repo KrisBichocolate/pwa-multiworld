@@ -32,7 +32,7 @@ public class InfoSuggest implements SuggestionProvider<ServerCommandSource> {
         boolean ALL = Perm.has(plr, "multiworld.admin");
 
         if (cmds.length <= 1 || (cmds.length <= 2 && !input.endsWith(" "))) {
-            String[] subcommands = {"tp", "list", "version", "create", "spawn", "setspawn", "gamerule", "help", "difficulty"};
+            String[] subcommands = {"tp", "list", "version", "create", "spawn", "setspawn", "gamerule", "help", "difficulty", "delete", "clone", "load", "unload"};
             for (String s : subcommands) {
                 builder.suggest(s);
             }
@@ -58,6 +58,8 @@ public class InfoSuggest implements SuggestionProvider<ServerCommandSource> {
                  });
                 for (String s : names) builder.suggest(s);
             }
+
+            // TODO: suggest worlds for delete and clone
             
             if (cmds[1].equalsIgnoreCase("create") && (ALL || Perm.has(plr, "multiworld.create"))) {
                 builder.suggest("myid:myvalue");
@@ -92,9 +94,10 @@ public class InfoSuggest implements SuggestionProvider<ServerCommandSource> {
 
         if (cmds.length <= 3 || (cmds.length <= 4 && !input.endsWith(" "))) {
             if (cmds[1].equalsIgnoreCase("create") && (ALL || Perm.has(plr, "multiworld.create")) ) {
-                builder.suggest("NORMAL");
-                builder.suggest("NETHER");
-                builder.suggest("END");
+                builder.suggest("normal overworld");
+                builder.suggest("normal the_nether");
+                builder.suggest("normal the_end");
+                builder.suggest("flat");
             }
             
             if (cmds[1].equalsIgnoreCase("gamerule") && (ALL || Perm.has(plr, "multiworld.gamerule")) ) {

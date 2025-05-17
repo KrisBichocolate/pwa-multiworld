@@ -46,12 +46,13 @@ public class FileConfiguration extends Configuration {
             if (line.isEmpty() || line.trim().isEmpty()) blanks.add(i);
 
             if (line.indexOf(':') != -1) {
-                String[] spl = line.split("[:]");
-                String key = spl[0];
-
+                int colonIndex = line.indexOf(':');
+                String key = line.substring(0, colonIndex);
+                
                 updateSection(key);
-
-                if (spl.length == 1) {
+                
+                if (colonIndex == line.length() - 1) {
+                    // This is a section header with no value (ends with colon)
                     if (i+1 < list.size() && list.get(i+1).trim().startsWith("-")) {
                         ArrayList<Object> o = new ArrayList<>();
                         i++;
@@ -63,8 +64,11 @@ public class FileConfiguration extends Configuration {
                     }
                     continue;
                 }
+                
+                // Get the entire value after the first colon
+                String value = line.substring(colonIndex + 1).trim();
                 key = lastSection;
-                contentMap.put(key, parseLine( spl[1].trim() ));
+                contentMap.put(key, parseLine(value));
             }
         }
     }

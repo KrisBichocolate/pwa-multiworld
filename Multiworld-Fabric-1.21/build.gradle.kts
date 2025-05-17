@@ -37,8 +37,11 @@ dependencies {
     mappings("net.fabricmc:yarn:1.21.1+build.3:v2")
     modImplementation("net.fabricmc:fabric-loader:0.16.3")
 
-	include("xyz.nucleoid:fantasy:0.6.3+1.21")
-	modImplementation("xyz.nucleoid:fantasy:0.6.3+1.21")
+	//include("xyz.nucleoid:fantasy:0.6.3+1.21")
+	include("xyz.nucleoid:fantasy")
+	//modImplementation("xyz.nucleoid:fantasy:0.6.3+1.21")
+	modImplementation("xyz.nucleoid:fantasy")
+    //modImplementation(project(":fantasy"))
 	modImplementation("curse.maven:cyber-permissions-407695:4640544")
 	modImplementation("me.lucko:fabric-permissions-api:0.2-SNAPSHOT")
 	modImplementation("net.fabricmc.fabric-api:fabric-api-deprecated:0.100.1+1.21")
@@ -80,7 +83,7 @@ sourceSets {
 // Jabel
 tasks.withType<JavaCompile>().configureEach {
     sourceCompatibility = JavaVersion.VERSION_21.toString() // for the IDE support
-    options.release.set(8)
+    //options.release.set(8)
 
     javaCompiler.set(
         javaToolchains.compilerFor {

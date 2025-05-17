@@ -5,9 +5,12 @@ import java.io.IOException;
 
 import me.isaiah.multiworld.MultiworldMod;
 import me.isaiah.multiworld.config.FileConfiguration;
+import me.isaiah.multiworld.config.WorldConfig;
 import net.minecraft.server.MinecraftServer;
+import net.minecraft.server.command.ServerCommandSource;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.server.world.ServerWorld;
+import net.minecraft.text.Text;
 import net.minecraft.util.Identifier;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.world.WorldProperties;
@@ -15,8 +18,14 @@ import net.minecraft.world.Heightmap;
 
 public class SpawnCommand {
 
-    public static int run(MinecraftServer mc, ServerPlayerEntity plr, String[] args) {
-        ServerWorld w = (ServerWorld) plr.getWorld();
+    public static int run(MinecraftServer mc, ServerCommandSource source, String[] args) {
+        if (!source.isExecutedByPlayer()) {
+            source.sendError(Text.literal("This command must be executed by a player"));
+            return 0;
+        }
+        
+        ServerPlayerEntity plr = source.getPlayer();
+        ServerWorld w = (ServerWorld) source.getWorld();
         BlockPos sp = getSpawn(w);
 
         // Don't use FabricDimensionInternals here as
@@ -29,35 +38,11 @@ public class SpawnCommand {
     }
 
     public static BlockPos getSpawn(ServerWorld w) {
-        File config_dir = new File("config");
-        config_dir.mkdirs();
-        
-        File cf = new File(config_dir, "multiworld"); 
-        cf.mkdirs();
-
-        File worlds = new File(cf, "worlds");
-        worlds.mkdirs();
-
-        Identifier id = w.getRegistryKey().getValue();
-        File namespace = new File(worlds, id.getNamespace());
-        namespace.mkdirs();
-
-        File wc = new File(namespace, id.getPath() + ".yml");
-        if (!wc.exists()) {
-            return multiworld_method_43126(w);
+        BlockPos configSpawn = WorldConfig.getSpawn(MultiworldMod.mc, w);
+        if (configSpawn != null) {
+            return configSpawn;
         }
-        FileConfiguration config;
-        try {
-            config = new FileConfiguration(wc);
-            if (config.is_set("spawnpos")) {
-            	return BlockPos.fromLong(config.getLong("spawnpos"));
-            } else {
-            	return multiworld_method_43126(w);
-            }
-        } catch (IOException e) {
-            e.printStackTrace();
-            return multiworld_method_43126(w);
-        }
+        return multiworld_method_43126(w);
     }
 	
 	// getSpawnPos

@@ -4,6 +4,7 @@
 .fabric/
 build/
 out/
+/output/
 classes/
 **/.fabric/
 **/.gradle/

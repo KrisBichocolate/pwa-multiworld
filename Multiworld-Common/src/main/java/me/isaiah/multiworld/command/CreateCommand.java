@@ -4,7 +4,9 @@ import java.util.HashMap;
 import java.util.Random;
 
 import net.minecraft.server.MinecraftServer;
+import net.minecraft.server.command.ServerCommandSource;
 import net.minecraft.server.network.ServerPlayerEntity;
+import net.minecraft.text.Text;
 import net.minecraft.util.Formatting;
 import net.minecraft.util.Identifier;
 import net.minecraft.world.Difficulty;
@@ -20,196 +22,152 @@ import java.io.File;
 import me.isaiah.multiworld.config.*;
 
 public class CreateCommand {
-	
-	public static HashMap<String, ChunkGenerator> customs = new HashMap<>();
-	
-	// TODO: expose API
-	public static void registerCustomGenerator(Identifier id, ChunkGenerator gen) {
-		customs.put(id.toString(), gen);
-	}
 
-	// Run Command
-    public static int run(MinecraftServer mc, ServerPlayerEntity plr, String[] args) {
-        if (args.length == 1 || args.length == 2) {
-            plr.sendMessage(text_plain("Usage: /mv create <id> <env>"), false);
+    // Run Command
+    public static int run(MinecraftServer mc, ServerCommandSource source, String[] args) {
+        if (args.length <= 2) {
+            source.sendError(Text.literal("Usage: /mw create <id> <world_preset> [<dimension>]"));
             return 0;
         }
 
         Random r = new Random();
         long seed = r.nextInt();
-        
-        String env = args[2];
-        ChunkGenerator gen = get_chunk_gen(mc, env);
-        Identifier dim = get_dim_id(env);
-        
-        if (null == dim) {
-        	System.out.println("Null dimenstion ");
-        	dim = Util.OVERWORLD_ID;
+
+        // Parse preset and dimension keys from args
+        String presetKey = args[2];
+        String dimensionKey = args.length > 3 ? args[3] : "minecraft:overworld";
+
+        // Get chunk generator and dimension ID based on preset and dimension keys
+        ChunkGenerator gen = get_chunk_gen(mc, presetKey, dimensionKey);
+        Identifier dimTypeKey = get_dim_type(presetKey, dimensionKey);
+
+        // Check if chunk generator or dimension type is null
+        if (gen == null) {
+            source.sendError(Text.literal("Could not find chunk generator for preset '" + presetKey + "' and dimension '" + dimensionKey + "'"));
+            return 0;
         }
-        
+
+        if (dimTypeKey == null) {
+            source.sendError(Text.literal("Could not find dimension type for preset '" + presetKey + "' and dimension '" + dimensionKey + "'"));
+            return 0;
+        }
+
         String arg1 = args[1];
         if (arg1.indexOf(':') == -1) {
-        	arg1 = "multiworld:" + arg1;
+            arg1 = "multiworld:" + arg1;
         }
-        
-        ServerWorld world = MultiworldMod.create_world(arg1, dim, gen, Difficulty.NORMAL, seed);
-		make_config(world, args[2], seed);
 
-        plr.sendMessage(text("Created world with id: " + args[1], Formatting.GREEN), false);
-        
+        // Check if world already exists (either loaded or has config)
+        if (WorldConfig.getConfigFile(mc, arg1).exists() || Util.isWorldLoaded(mc, arg1)) {
+            source.sendError(Text.literal("World '" + arg1 + "' already exists!"));
+            return 0;
+        }
+
+        ServerWorld world = MultiworldMod.create_world(arg1, dimTypeKey, gen, Difficulty.NORMAL, seed);
+        WorldConfig.createWorldConfig(mc, world, presetKey, dimensionKey, seed);
+
+        source.sendMessage(text("Created world with id: " + args[1] + " using preset: " + presetKey + ", dimension: " + dimensionKey, Formatting.GREEN));
+
         return 1;
     }
 
     /**
-     * Return a {@link Identifier} representing the given vanilla environment,
-     * or NULL if the passed argument is not NORMAL / NETHER / END.
+     * Return a {@link Identifier} representing the dimension from the given preset and dimension key
+     * 
+     * @param presetKey The world preset key
+     * @param dimensionKey The dimension key within the preset
+     * @return The dimension type identifier or null if not found
      */
-    public static Identifier get_dim_id(String env) {
-    	if (env.contains("NORMAL")) {
-			return Util.OVERWORLD_ID;
-		}
-
-		if (env.contains("NETHER")) {
-			return Util.THE_NETHER_ID;
-		}
-
-		if (env.contains("END")) {
-			return Util.THE_END_ID;
-		}
-		
-		if (customs.containsKey(env)) {
-			return MultiworldMod.new_id( env );
-		}
-		
-		return null;
+    public static Identifier get_dim_type(String presetKey, String dimensionKey) {
+        return MultiworldMod.get_world_creator().get_dim_type(presetKey, dimensionKey);
     }
 
     /**
-     * Return a {@link ChunkGenerator} for the given vanilla environment,
-     * or NULL if the passed argument is not NORMAL / NETHER / END.
+     * Return a {@link ChunkGenerator} for the given preset and dimension key
+     * 
+     * @param mc The Minecraft server
+     * @param presetKey The world preset key
+     * @param dimensionKey The dimension key within the preset
+     * @return The chunk generator or null if not found
      */
-    public static ChunkGenerator get_chunk_gen(MinecraftServer mc, String env) {
-		ChunkGenerator gen = MultiworldMod.get_world_creator().get_chunk_gen(mc, env);
+    public static ChunkGenerator get_chunk_gen(MinecraftServer mc, String presetKey, String dimensionKey) {
+        return MultiworldMod.get_world_creator().get_chunk_gen(mc, presetKey, dimensionKey);
+    }
 
-		if (customs.containsKey(env)) {
-			return customs.get(env);
-		}
-		return gen;
-    } 
-	
-	public static void reinit_world_from_config(MinecraftServer mc, String id) {
-		File config_dir = new File("config");
-        config_dir.mkdirs();
-		
-		String[] spl = id.split(":");
-        
-        File cf = new File(config_dir, "multiworld"); 
-        cf.mkdirs();
-
-        File worlds = new File(cf, "worlds");
-        worlds.mkdirs();
-
-        File namespace = new File(worlds, spl[0]);
-        namespace.mkdirs();
-
-        File wc = new File(namespace, spl[1] + ".yml");
-        FileConfiguration config;
+    public static void reinit_world_from_config(MinecraftServer mc, String id) {
         try {
-			if (!wc.exists()) {
-				wc.createNewFile();
-			}
-            config = new FileConfiguration(wc);
-			String env = config.getString("environment");
-			long seed = 0;
-			
-			try {
-				seed = config.getLong("seed");
-			} catch (Exception e) {
-				seed = config.getInt("seed");
-			}
+            FileConfiguration config = WorldConfig.getConfig(mc, id);
 
-			ChunkGenerator gen = get_chunk_gen(mc, env);
-		    Identifier dim = get_dim_id(env);
-		    
-		    if (null == dim) {
-		    	dim = Util.OVERWORLD_ID;
-		    }
-			
-			Difficulty d = Difficulty.NORMAL;
-			
-			// Set saved Difficulty
-			if (config.is_set("difficulty")) {
-				String di = config.getString("difficulty");
+            // Get preset and dimension keys from config
+            String presetKey = config.getString("preset_key");
+            String dimensionKey = config.getString("dimension_key");
 
-				// String to Difficulty
-				if (di.equalsIgnoreCase("EASY"))     { d = Difficulty.EASY; }
-				if (di.equalsIgnoreCase("HARD"))     { d = Difficulty.HARD; }
-				if (di.equalsIgnoreCase("NORMAL"))   { d = Difficulty.NORMAL; }
-				if (di.equalsIgnoreCase("PEACEFUL")) { d = Difficulty.PEACEFUL; }
-			}
-			
-			ServerWorld world = MultiworldMod.create_world(id, dim, gen, d, seed);
+            long seed = 0;
+            try {
+                seed = config.getLong("seed");
+            } catch (Exception e) {
+                seed = config.getInt("seed");
+            }
 
-			if (GameruleCommand.keys.size() == 0) {
-				GameruleCommand.setupServer(MultiworldMod.mc);
-			}
+            ChunkGenerator gen = get_chunk_gen(mc, presetKey, dimensionKey);
+            Identifier dimTypeKey = get_dim_type(presetKey, dimensionKey);
 
-			// Set Gamerules
-			for (String name : GameruleCommand.keys.keySet()) {
-				String key = "gamerule_" + name;
-				
-				if (config.is_set(key)) {
-					
-					Object o = config.getObject(key);
-					
-					// BoleanRule
-					if (o instanceof Boolean) {
-						o = ((Boolean) o) ? "true" : "false";
-					}
-					
-					// IntRule
-					if (o instanceof Integer) {
-						o = String.valueOf((Integer) o);
-					}
-					
-					GameruleCommand.set_gamerule_from_cfg(world, key, (String) o);
-				}
-			}
-			
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
-	}
-	
-	public static void make_config(ServerWorld w, String dim, long seed) {
-        File config_dir = new File("config");
-        config_dir.mkdirs();
-        
-        File cf = new File(config_dir, "multiworld"); 
-        cf.mkdirs();
+            // Check if chunk generator or dimension type is null
+            if (gen == null) {
+                System.err.println("Could not find chunk generator for preset '" + presetKey + "' and dimension '" + dimensionKey + "' for world '" + id + "'");
+                return;
+            }
 
-        File worlds = new File(cf, "worlds");
-        worlds.mkdirs();
+            if (dimTypeKey == null) {
+                System.err.println("Could not find dimension type for preset '" + presetKey + "' and dimension '" + dimensionKey + "' for world '" + id + "'");
+                return;
+            }
 
-        Identifier id = w.getRegistryKey().getValue();
-        File namespace = new File(worlds, id.getNamespace());
-        namespace.mkdirs();
+            Difficulty d = Difficulty.NORMAL;
 
-        File wc = new File(namespace, id.getPath() + ".yml");
-        FileConfiguration config;
-        try {
-			if (!wc.exists()) {
-				wc.createNewFile();
-			}
-            config = new FileConfiguration(wc);
-			config.set("namespace", id.getNamespace());
-			config.set("path", id.getPath());
-			config.set("environment", dim);
-			config.set("seed", seed);
-			config.save();
+            // Set saved Difficulty
+            if (config.is_set("difficulty")) {
+                String di = config.getString("difficulty");
+
+                // String to Difficulty
+                if (di.equalsIgnoreCase("EASY"))     { d = Difficulty.EASY; }
+                if (di.equalsIgnoreCase("HARD"))     { d = Difficulty.HARD; }
+                if (di.equalsIgnoreCase("NORMAL"))   { d = Difficulty.NORMAL; }
+                if (di.equalsIgnoreCase("PEACEFUL")) { d = Difficulty.PEACEFUL; }
+            }
+
+            ServerWorld world = MultiworldMod.create_world(id, dimTypeKey, gen, d, seed);
+
+            if (GameruleCommand.keys.size() == 0) {
+                GameruleCommand.setupServer(MultiworldMod.mc);
+            }
+
+            // Set Gamerules
+            for (String name : GameruleCommand.keys.keySet()) {
+                String key = "gamerule_" + name;
+
+                if (config.is_set(key)) {
+
+                    Object o = config.getObject(key);
+
+                    // BoleanRule
+                    if (o instanceof Boolean) {
+                        o = ((Boolean) o) ? "true" : "false";
+                    }
+
+                    // IntRule
+                    if (o instanceof Integer) {
+                        o = String.valueOf((Integer) o);
+                    }
+
+                    GameruleCommand.set_gamerule_from_cfg(world, key, (String) o);
+                }
+            }
+
         } catch (Exception e) {
             e.printStackTrace();
         }
     }
+
 
 }

@@ -64,11 +64,19 @@ public class FabricWorldCreator implements ICreator {
     
     public void delete_world(String id) {
         Fantasy fantasy = Fantasy.get(MultiworldMod.mc);
-        RuntimeWorldHandle worldHandle = fantasy.getOrOpenPersistentWorld(new_id(id), null);
+        RuntimeWorldHandle worldHandle = fantasy.getOrOpenPersistentWorld(new_id(id), worldConfigs.get(id));
         worldHandle.delete();
     }
 	
 	@Override
+    public boolean unload_world(String id) {
+        Fantasy fantasy = Fantasy.get(MultiworldMod.mc);
+        RuntimeWorldHandle worldHandle = fantasy.getOrOpenPersistentWorld(new_id(id), worldConfigs.get(id));
+        worldHandle.unload();
+        return true;
+    }
+
+    @Override
 	public Text colored_literal(String txt, Formatting color) {
 		try {
 			return Text.of(txt).copy().formatted(color);

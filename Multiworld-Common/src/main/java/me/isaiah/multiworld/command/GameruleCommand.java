@@ -6,10 +6,13 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import me.isaiah.multiworld.MultiworldMod;
 import me.isaiah.multiworld.config.FileConfiguration;
+import me.isaiah.multiworld.config.WorldConfig;
 
 import net.minecraft.server.MinecraftServer;
+import net.minecraft.server.command.ServerCommandSource;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.server.world.ServerWorld;
+import net.minecraft.text.Text;
 import net.minecraft.util.Identifier;
 import net.minecraft.world.GameRules;
 import net.minecraft.world.World;
@@ -28,8 +31,8 @@ public class GameruleCommand {
 	public static HashMap<String, GameRules.Key> keys = new HashMap<>();
 	
     @SuppressWarnings("unchecked")
-	public static int run(MinecraftServer mc, ServerPlayerEntity plr, String[] args) {
-        ServerWorld w = (ServerWorld) plr.getWorld();
+	public static int run(MinecraftServer mc, ServerCommandSource source, String[] args) {
+        ServerWorld w = source.getWorld();
         
 		if (keys.isEmpty()) {
 			setup(w);
@@ -39,7 +42,7 @@ public class GameruleCommand {
 
 		if (args.length < 3) {
 			Rule<?> rule = getGameRules(w).get(keys.get(args[1]));
-			MultiworldMod.message(plr, "[&4Multiworld&r] Value of " + args[1] + " is: " + rule);
+			source.sendMessage(Text.literal("§4[Multiworld]§r Value of " + args[1] + " is: " + rule));
 			return 1;
 		}
 		
@@ -93,12 +96,12 @@ public class GameruleCommand {
 
         // Save to world config
     	try {
-			set_rule_cfg(w, a1, a2);
+			WorldConfig.saveGamerule(mc, w, a1, a2);
 		} catch (IOException e) {
 			e.printStackTrace();
 		}
 
-        MultiworldMod.message(plr, "[&cMultiworld&r]: Gamerule " + a1 + " is now set to: " + a2);
+        source.sendMessage(Text.literal("§c[Multiworld]§r: Gamerule " + a1 + " is now set to: " + a2));
         
         return 1;
     }
@@ -133,36 +136,6 @@ public class GameruleCommand {
         });
     }
     
-    /**
-     * Save the Gamerule to our world config
-     * 
-     * @param w - The World to apply the Gamerule
-     * @param a - The Gamerule name (ex: "doDaylightCycle")
-     * @param b - The value for the Gamerule (ex: "true", or "100")
-     */
-    public static void set_rule_cfg(World w, String a, String b) throws IOException {
-        File cf = new File(Util.get_platform_config_dir(), "multiworld"); 
-        cf.mkdirs();
-
-        File worlds = new File(cf, "worlds");
-        worlds.mkdirs();
-
-        Identifier id = w.getRegistryKey().getValue();
-        File namespace = new File(worlds, id.getNamespace());
-        namespace.mkdirs();
-
-        File wc = new File(namespace, id.getPath() + ".yml");
-        wc.createNewFile();
-        FileConfiguration config = new FileConfiguration(wc);
-
-        if (!config.is_set("gamerules")) {
-        	config.set("gamerules", new ArrayList<String>());
-        }
-
-        config.set("gamerule_" + a, b);
-
-        config.save();
-    }
 
     /**
      * Load gamerule from config entry

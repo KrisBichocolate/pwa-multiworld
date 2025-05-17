@@ -4,8 +4,10 @@ import java.util.HashMap;
 
 import net.minecraft.block.Blocks;
 import net.minecraft.server.MinecraftServer;
+import net.minecraft.server.command.ServerCommandSource;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.server.world.ServerWorld;
+import net.minecraft.text.Text;
 import net.minecraft.util.Formatting;
 import net.minecraft.util.math.BlockPos;
 import static me.isaiah.multiworld.MultiworldMod.text;
@@ -16,7 +18,13 @@ import me.isaiah.multiworld.config.*;
 
 public class TpCommand {
 
-    public static int run(MinecraftServer mc, ServerPlayerEntity plr, String[] args) {
+    public static int run(MinecraftServer mc, ServerCommandSource source, String[] args) {
+        if (!source.isExecutedByPlayer()) {
+            source.sendError(Text.literal("This command must be executed by a player"));
+            return 0;
+        }
+        
+        ServerPlayerEntity plr = source.getPlayer();
         HashMap<String,ServerWorld> worlds = new HashMap<>();
         mc.getWorldRegistryKeys().forEach(r -> {
             ServerWorld world = mc.getWorld(r);
@@ -41,13 +49,6 @@ public class TpCommand {
 			} catch (NoSuchMethodError | Exception e) {
 			}
 			
-			String env = read_env_from_config(arg1);
-			if (null != env) {
-				if (env.equalsIgnoreCase("END")) {
-					isEnd = true;
-				}
-			}
-
 			if (isEnd) {
 				//ServerWorld.createEndSpawnPlatform(w);
 				method_29200_createEndSpawnPlatform(w);
@@ -55,10 +56,10 @@ public class TpCommand {
 			}
 			
             if (null == sp) {
-                plr.sendMessage(text("Error: null getSpawnPos", Formatting.RED), false);
+                source.sendError(Text.literal("Error: null getSpawnPos"));
                 sp = new BlockPos(1, 40, 1);
             }
-            plr.sendMessage(text("Teleporting...", Formatting.GOLD), false);
+            source.sendMessage(text("Teleporting...", Formatting.GOLD));
 
             sp = findSafePos(w, sp);
 
@@ -98,35 +99,4 @@ public class TpCommand {
 	public static BlockPos multiworld_method_43126(ServerWorld world) {
         return SpawnCommand.multiworld_method_43126(world);
     }
-	
-	public static String read_env_from_config(String id) {
-        File config_dir = new File("config");
-        config_dir.mkdirs();
-		
-		String[] spl = id.split(":");
-        
-        File cf = new File(config_dir, "multiworld"); 
-        cf.mkdirs();
-
-        File worlds = new File(cf, "worlds");
-        worlds.mkdirs();
-
-        File namespace = new File(worlds, spl[0]);
-        namespace.mkdirs();
-
-        File wc = new File(namespace, spl[1] + ".yml");
-        FileConfiguration config;
-        try {
-			if (!wc.exists()) {
-				wc.createNewFile();
-			}
-            config = new FileConfiguration(wc);
-			String env = config.getString("environment");
-			return env;
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
-		return "NORMAL";
-    }
-
 }
